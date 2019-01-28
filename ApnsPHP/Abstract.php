@@ -390,7 +390,14 @@ abstract class ApnsPHP_Abstract
 			'local_cert' => $this->_sProviderCertificateFile
 		));
 
-		if( $this->_proxy ) $opts['ssl']['proxy'] = $this->_proxy;
+		if( $this->_proxy ) {
+			$opts['http'] = array(
+		        'timeout' => 20,
+		        'proxy' => $this->_proxy,
+		        'request_fulluri' => true 
+		    );
+		    $opts['ssl']['SNI_enabled'] = false;
+		}
 
 		/**
 		 * @see http://php.net/manual/en/context.ssl.php
