@@ -166,7 +166,7 @@ class ApnsPHP_Push extends ApnsPHP_Abstract
 						$this->_removeMessageFromQueue($k, true);
 						continue;
 					}
-				}
+				} 
 
 				$nLen = strlen($aMessage['BINARY_NOTIFICATION']);
 				$this->_log("STATUS: Sending message ID {$k} {$sCustomIdentifier} (" . ($nErrors + 1) . "/{$this->_nSendRetryTimes}): {$nLen} bytes.");

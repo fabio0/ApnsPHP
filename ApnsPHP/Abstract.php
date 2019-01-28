@@ -390,33 +390,76 @@ abstract class ApnsPHP_Abstract
 			'local_cert' => $this->_sProviderCertificateFile
 		));
 
-		if( $this->_proxy ) {
+		$apns_settings = array(
+		        "host" => $sURL,
+		        "certificate" => $this->_sProviderCertificateFile,
+		        "passphrase" => $this->_sProviderCertificatePassphrase,
+		);
+
+		/*if( $this->_proxy ) {
 			$opts['http'] = array(
 		        'timeout' => 20,
 		        'proxy' => $this->_proxy,
 		        'request_fulluri' => true 
 		    );
 		    $opts['ssl']['SNI_enabled'] = false;
-		}
+		}*/
 
 		/**
 		 * @see http://php.net/manual/en/context.ssl.php
 		 */
+		$stream_context = stream_context_create($opts);
+		$this->_hSocket/*$apns*/ = stream_socket_client($this->_proxy, $error, $errorString, 2, STREAM_CLIENT_CONNECT, $stream_context);
+
+
 		$streamContext = stream_context_create( $opts );
 
-		if (!empty($this->_sProviderCertificatePassphrase)) {
-			stream_context_set_option($streamContext, 'ssl',
-				'passphrase', $this->_sProviderCertificatePassphrase);
+
+		$connect_via_proxy = "CONNECT ".$apns_settings["host"]." HTTP/1.1\r\n".
+		"Host: ".$apns_settings["host"]."\n".
+		"User-Agent: SimplePush\n".
+		"Proxy-Connection: Keep-Alive\n\n";
+
+		echo $connect_via_proxy;
+
+		fwrite($this->_hSocket,$connect_via_proxy,strlen($connect_via_proxy));
+
+		// read whole response and check successful "HTTP/1.0 200 Connection established"
+		if($response = fread($this->_hSocket,1024)) {
+		        $parts = explode(' ',$response);
+		        if($parts[1] !== '200') { 
+		                die('Connection error: '.trim($response));
+		        } else {
+		        	var_dump($response);
+		            echo "R:".$response.":R\n";
+		        }
+		} else {
+		        die('Timeout or other error');
 		}
 
+
+		
+
+		/*
 		$this->_hSocket = @stream_socket_client($sURL, $nError, $sError,
-			$this->_nConnectTimeout, STREAM_CLIENT_CONNECT, $streamContext);
+			$this->_nConnectTimeout, STREAM_CLIENT_CONNECT, $streamContext);*/
 
 		if (!$this->_hSocket) {
 			throw new ApnsPHP_Exception(
 				"Unable to connect to '{$sURL}': {$sError} ({$nError})"
 			);
 		}
+		/*
+		if (stream_socket_enable_crypto($this->_hSocket,true,STREAM_CRYPTO_METHOD_TLS_CLIENT))
+			    echo "Switched to SSL OK...\n";
+			else
+			    die('some error in SSL negociation');*/
+
+		/*			
+		if (!empty($this->_sProviderCertificatePassphrase)) {
+			stream_context_set_option($streamContext, 'ssl',
+				'passphrase', $this->_sProviderCertificatePassphrase);
+		}*/
 
 		stream_set_blocking($this->_hSocket, 0);
 		stream_set_write_buffer($this->_hSocket, 0);
