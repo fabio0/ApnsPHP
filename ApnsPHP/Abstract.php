@@ -67,6 +67,7 @@ abstract class ApnsPHP_Abstract
 
 	protected $_hSocket; /**< @type resource SSL Socket. */
 
+	protected $_proxy = null;
 	/**
 	 * Constructor.
 	 *
@@ -129,6 +130,14 @@ abstract class ApnsPHP_Abstract
 			);
 		}
 		$this->_logger = $logger;
+	}
+
+	/**
+	 * Imposto un proxy per lo stream
+	 * @param string $proxy [description]
+	 */
+	public function setProxy( string $proxy ) {
+		$this->_proxy = $proxy;
 	}
 
 	/**
@@ -375,14 +384,18 @@ abstract class ApnsPHP_Abstract
 
 		$this->_log("INFO: Trying {$sURL}...");
 
-		/**
-		 * @see http://php.net/manual/en/context.ssl.php
-		 */
-		$streamContext = stream_context_create(array('ssl' => array(
+		$opts = array('ssl' => array(
 			'verify_peer' => isset($this->_sRootCertificationAuthorityFile),
 			'cafile' => $this->_sRootCertificationAuthorityFile,
 			'local_cert' => $this->_sProviderCertificateFile
-		)));
+		));
+
+		if( $this->_proxy ) $opts['ssl']['proxy'] = $this->_proxy;
+
+		/**
+		 * @see http://php.net/manual/en/context.ssl.php
+		 */
+		$streamContext = stream_context_create( $opts );
 
 		if (!empty($this->_sProviderCertificatePassphrase)) {
 			stream_context_set_option($streamContext, 'ssl',
