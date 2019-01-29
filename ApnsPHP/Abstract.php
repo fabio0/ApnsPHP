@@ -340,7 +340,7 @@ abstract class ApnsPHP_Abstract
 		$nRetry = 0;
 		while (!$bConnected) {
 			try {
-				$bConnected = $this->_connect();
+				$bConnected = (!empty($this->_proxy)) ? $this->_connect_with_proxy() : $this->_connect();
 			} catch (ApnsPHP_Exception $e) {
 				$this->_log('ERROR: ' . $e->getMessage());
 				if ($nRetry >= $this->_nConnectRetryTimes) {
@@ -390,78 +390,97 @@ abstract class ApnsPHP_Abstract
 			'local_cert' => $this->_sProviderCertificateFile
 		));
 
-		$apns_settings = array(
-		        "host" => $sURL,
-		        "certificate" => $this->_sProviderCertificateFile,
-		        "passphrase" => $this->_sProviderCertificatePassphrase,
-		);
-
-		/*if( $this->_proxy ) {
-			$opts['http'] = array(
-		        'timeout' => 20,
-		        'proxy' => $this->_proxy,
-		        'request_fulluri' => true 
-		    );
-		    $opts['ssl']['SNI_enabled'] = false;
-		}*/
-
 		/**
 		 * @see http://php.net/manual/en/context.ssl.php
 		 */
-		$stream_context = stream_context_create($opts);
-		$this->_hSocket/*$apns*/ = stream_socket_client($this->_proxy, $error, $errorString, 2, STREAM_CLIENT_CONNECT, $stream_context);
-
-
 		$streamContext = stream_context_create( $opts );
 
-
-		$connect_via_proxy = "CONNECT ".$apns_settings["host"]." HTTP/1.1\r\n".
-		"Host: ".$apns_settings["host"]."\n".
-		"User-Agent: SimplePush\n".
-		"Proxy-Connection: Keep-Alive\n\n";
-
-		echo $connect_via_proxy;
-
-		fwrite($this->_hSocket,$connect_via_proxy,strlen($connect_via_proxy));
-
-		// read whole response and check successful "HTTP/1.0 200 Connection established"
-		if($response = fread($this->_hSocket,1024)) {
-		        $parts = explode(' ',$response);
-		        if($parts[1] !== '200') { 
-		                die('Connection error: '.trim($response));
-		        } else {
-		        	var_dump($response);
-		            echo "R:".$response.":R\n";
-		        }
-		} else {
-		        die('Timeout or other error');
+		if (!empty($this->_sProviderCertificatePassphrase)) {
+			stream_context_set_option($streamContext, 'ssl',
+				'passphrase', $this->_sProviderCertificatePassphrase);
 		}
 
-
-		
-
-		/*
 		$this->_hSocket = @stream_socket_client($sURL, $nError, $sError,
-			$this->_nConnectTimeout, STREAM_CLIENT_CONNECT, $streamContext);*/
+			$this->_nConnectTimeout, STREAM_CLIENT_CONNECT, $streamContext);
 
 		if (!$this->_hSocket) {
 			throw new ApnsPHP_Exception(
 				"Unable to connect to '{$sURL}': {$sError} ({$nError})"
 			);
 		}
-		/*
-		if (stream_socket_enable_crypto($this->_hSocket,true,STREAM_CRYPTO_METHOD_TLS_CLIENT))
-			    echo "Switched to SSL OK...\n";
-			else
-			    die('some error in SSL negociation');*/
-
-		/*			
-		if (!empty($this->_sProviderCertificatePassphrase)) {
-			stream_context_set_option($streamContext, 'ssl',
-				'passphrase', $this->_sProviderCertificatePassphrase);
-		}*/
 
 		stream_set_blocking($this->_hSocket, 0);
+		stream_set_write_buffer($this->_hSocket, 0);
+
+		$this->_log("INFO: Connected to {$sURL}.");
+
+		return true;
+	}
+
+	/**
+	 * Connects to Apple Push Notification service server via user defined proxy
+	 *
+	 * @throws ApnsPHP_Exception if is unable to connect.
+	 * @return @type boolean True if successful connected.
+	 */
+	protected function _connect_with_proxy()
+	{
+		$this->_log("Uso un cazzo di proxy");
+		$sURL = $this->_aServiceURLs[$this->_nEnvironment];
+		unset($aURLs);
+
+		$this->_log("INFO: Trying {$sURL}...");
+
+		$splitted = explode(":", str_replace("tls://", "", $sURL) );
+		$host = $splitted[0];
+		$port = $splitted[1];
+
+		$opts = array('ssl' => array(
+			'verify_peer' => isset($this->_sRootCertificationAuthorityFile),
+			'cafile' => $this->_sRootCertificationAuthorityFile,
+			'local_cert' => $this->_sProviderCertificateFile,
+			'passphrase' => '',
+			'peer_name' => $host,
+			'SNI_server_name' => $host,
+		));
+
+		$stream_context = stream_context_create($opts);
+		
+		if (!empty($this->_sProviderCertificatePassphrase)) {
+			stream_context_set_option($stream_context, 'ssl',
+				'passphrase', $this->_sProviderCertificatePassphrase);
+		}
+
+		$this->_hSocket = stream_socket_client('tcp://'.$this->_proxy, $nError, $sError, $this->_nConnectTimeout, STREAM_CLIENT_CONNECT, $stream_context);
+
+		if (!$this->_hSocket) {
+			throw new ApnsPHP_Exception(
+				"Unable to connect to '{$sURL}': {$sError} ({$nError})"
+			);
+		}
+
+		$connect_via_proxy = "CONNECT ".$host.":".$port." HTTP/1.1\r\n".
+        "Host: ".$host.":".$port."\r\n".
+        "User-Agent: SimplePush\r\n".
+        "Accept: */*\r\n".
+        "Proxy-Connection: keep-alive\r\n\r\n";
+
+        echo $connect_via_proxy;
+		fwrite($this->_hSocket,$connect_via_proxy,strlen($connect_via_proxy));
+
+		if($response = fread($this->_hSocket,1024)) {
+            $parts = explode(' ',$response);
+            if($parts[1] !== '200') { 
+                    die('Connection error: '.trim($response));
+            } else {
+                    echo "R:".$response.":R\n";
+            }
+        } else {
+            die('Timeout or other error');
+        }
+
+
+        stream_set_blocking($this->_hSocket, 0);
 		stream_set_write_buffer($this->_hSocket, 0);
 
 		$this->_log("INFO: Connected to {$sURL}.");
